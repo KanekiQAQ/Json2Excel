@@ -1,5 +1,6 @@
 ﻿using OfficeOpenXml;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json;
@@ -46,41 +47,63 @@ namespace Json2Excel
 
         private static byte[] Convert2Excel(string fileName, string content)
         {
+            var dictionary = new Dictionary<string, List<string>>();
             var jsonDocument = JsonDocument.Parse(content, new JsonDocumentOptions
             {
                 AllowTrailingCommas = true,
                 CommentHandling = JsonCommentHandling.Skip
             });
+            foreach (var element in jsonDocument.RootElement.EnumerateArray())
+            {
+                foreach (var obj in element.EnumerateObject())
+                {
+                    if (!dictionary.ContainsKey(obj.Name))
+                    {
+                        var list = new List<string>();
+                        list.Add(obj.Name);
+                        dictionary.Add(obj.Name, list);
+                    }
+                }
+            }
+            foreach (var element in jsonDocument.RootElement.EnumerateArray())
+            {
+                foreach (var dic in dictionary)
+                {
+                    JsonElement j;
+                    if (element.TryGetProperty(dic.Key, out j))
+                    {
+                        dictionary[dic.Key].Add(j.ToString());
+                    }
+                    else
+                    {
+                        dictionary[dic.Key].Add(null);
+                    }
+                }
+            }
             using (ExcelPackage package = new ExcelPackage())
             {
                 ExcelWorksheet worksheet = package.Workbook.Worksheets.Add(fileName);
-                int row = 1;
-                foreach (var element in jsonDocument.RootElement.EnumerateArray())
+                int col = 1;
+                foreach (var dic in dictionary)
                 {
-                    int col = 1;
-                    foreach (var obj in element.EnumerateObject())
+                    int row = 1;
+                    for (int i = 0; i < dictionary[dic.Key].Count; i++)
                     {
                         if (row == 1)
                         {
-                            worksheet.Cells[1, col].Value = obj.Name;
-                            worksheet.Cells[1, col].Style.Font.Bold = true;
-                            worksheet.Cells[1, col].Style.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Center;
-                            worksheet.Cells[1, col].Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
-                            worksheet.Cells[1, col].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(211, 211, 211));
-                            worksheet.Cells[2, col].Value = obj.Value.ToString();
-                            col++;
+                            worksheet.Cells[row, col].Value = dictionary[dic.Key][i];
+                            worksheet.Cells[row, col].Style.Font.Bold = true;
+                            worksheet.Cells[row, col].Style.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Center;
+                            worksheet.Cells[row, col].Style.Fill.PatternType = OfficeOpenXml.Style.ExcelFillStyle.Solid;
+                            worksheet.Cells[row, col].Style.Fill.BackgroundColor.SetColor(System.Drawing.Color.FromArgb(211, 211, 211));
                         }
                         else
                         {
-                            worksheet.Cells[row, col].Value = obj.Value.ToString();
-                            col++;
+                            worksheet.Cells[row, col].Value = dictionary[dic.Key][i];
                         }
+                        row++;
                     }
-                    if (row == 1) 
-                    {
-                        row = 2;
-                    }
-                    row++;                    
+                    col++;
                 }
                 worksheet.Cells.AutoFitColumns();
                 package.Save();
